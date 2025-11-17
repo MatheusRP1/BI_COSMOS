@@ -2,6 +2,6 @@ streamlit
 pandas
 openpyxl
 plotly
-google-generativeai
 streamlit-option-menu
 numpy
+huggingface_hub

@@ -3,11 +3,11 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
-import google.generativeai as genai
 import re
 from streamlit_option_menu import option_menu
 import base64 
-import pathlib # Adicionado para corrigir o caminho da logo
+import pathlib
+from huggingface_hub import InferenceClient
 
 st.set_page_config(
     page_title="Studio Cosmos - Análise de Viabilidade",
@@ -28,10 +28,9 @@ st.markdown(
         --color-container: #262730; 
         
         --color-text-primary: #FAFAFA; 
-        --color-text-secondary: #FAFAFA; /* AJUSTE: Alterado de #A0A0A0 para branco */
+        --color-text-secondary: #FAFAFA;
         --color-border: #3E3E3E; 
     }
-
     [data-testid="stAppViewContainer"] {
         background-color: var(--color-background) !important;
         color: var(--color-text-primary) !important;
@@ -39,7 +38,6 @@ st.markdown(
     .main { 
         background-color: var(--color-background) !important;
     }
-    
     [data-testid="stSidebar"] {
         background-color: var(--color-sidebar); 
         border-right: 1px solid var(--color-border);
@@ -50,29 +48,22 @@ st.markdown(
     [data-testid="stSidebar"] li {
         color: var(--color-text-primary) !important;
     }
-
     [data-testid="stMetric"], [data-testid="stExpander"], [data-testid="stDataFrame"], [data-testid="stAlert"] {
         background-color: var(--color-container); 
         border: 1px solid var(--color-border);
         border-radius: 8px;
     }
-    
     [data-testid="stMetric"] {
         padding: 15px;
         color: var(--color-text-primary) !important; 
     }
     [data-testid="stMetricLabel"] {
-        color: var(--color-text-secondary) !important; /* Agora usa o secundário (branco) */
+        color: var(--color-text-secondary) !important; 
     }
-    
-    /* --- CORREÇÃO DE COR AQUI --- */
     [data-testid="stExpander"] summary {
         font-weight: bold;
-        color: var(--color-text-primary) !important; /* AJUSTE: Alterado de rosa para branco */
+        color: var(--color-text-primary) !important; 
     }
-    /* --- FIM DA CORREÇÃO --- */
-
-    /* --- HEADER MAIOR --- */
     .header {
         display: flex;
         align-items: center;
@@ -96,10 +87,8 @@ st.markdown(
     .header h2 {
         margin: 0;
         font-size: 1.4em; 
-        color: var(--color-text-secondary); /* Agora usa o secundário (branco) */
+        color: var(--color-text-secondary); 
     }
-    /* --- FIM DO HEADER MAIOR --- */
-
     div[data-testid="stHorizontalBlock"] > div[data-testid^="element-container-"] > div[data-testid^="stOptionMenu-"] {
         background-color: var(--color-container);
         border: 1px solid var(--color-border);
@@ -108,7 +97,7 @@ st.markdown(
         margin-bottom: 10px; 
     }
     div[data-testid^="stOptionMenu-"] > nav > ul > li > a {
-        color: var(--color-text-secondary) !important; /* Agora usa o secundário (branco) */
+        color: var(--color-text-secondary) !important; 
         padding: 10px;
         border-radius: 6px;
     }
@@ -297,7 +286,7 @@ def criar_pagina_dimensao(nome_dimensao, df_dimensao, mapas_carregados):
                 x=col_indicador,
                 y=col_escala,
                 color=col_escala,
-                color_continuous_scale=px.colors.sequential.Blues, # AJUSTE: Alterado de Magma para Blues
+                color_continuous_scale=px.colors.sequential.Blues,
                 text=col_escala,
                 title=f"Notas dos indicadores - {nome_dimensao.capitalize()}",
                 range_y=[0, 6], 
@@ -370,7 +359,6 @@ def criar_pagina_dimensao(nome_dimensao, df_dimensao, mapas_carregados):
         st.error("Não foi possível encontrar as colunas 'Indicador', 'Análise' ou 'Relação' no Excel.")
         st.dataframe(df_dimensao)
 
-# --- INÍCIO DAS NOVAS FUNÇÕES LEGISLATIVAS ---
 def find_header_row(df_raw, keywords):
     for i, row in df_raw.head(30).iterrows():
         row_values = [clean_str(val) for val in row.values]
@@ -432,36 +420,24 @@ def processar_tabela_usos(df_raw):
     col_usos_final = encontrar_coluna(df_processado, [col_usos_str])
     col_indicador_final = encontrar_coluna(df_processado, ['indicador'])
 
-
     if col_adeq_final and col_usos_final:
-        # Substitui vazios e NaN por "Inadequado"
         df_processado[col_adeq_final] = df_processado[col_adeq_final].replace(r'^\s*$', np.nan, regex=True)
         df_processado[col_adeq_final] = df_processado[col_adeq_final].fillna('Inadequado')
-        
-        # Remove linhas onde a coluna 'USOS' é vazia
         df_processado = df_processado.dropna(subset=[col_usos_final])
-        
-        # Remove linhas que são resquícios do cabeçalho ou títulos
         df_processado = df_processado[~df_processado[col_usos_final].str.contains(col_usos_str, case=False, na=False)]
         if col_indicador_final:
              df_processado = df_processado[~df_processado[col_indicador_final].str.contains('adequação dos usos', case=False, na=False)]
     
     df_processado = df_processado.dropna(how='all')
     return df_processado
-# --- FIM DAS NOVAS FUNÇÕES LEGISLATIVAS ---
 
-
-# --- AJUSTE DE CAMINHO DA LOGO (INÍCIO) ---
-# Define o caminho para a pasta onde o script app.py está
 SCRIPT_DIR = pathlib.Path(__file__).parent
-# Define o caminho completo para a logo
 LOGO_PATH = SCRIPT_DIR / "logo.jpg"
 
 logo_src = "https://raw.githubusercontent.com/streamlit/templates/main/multipage-apps/assets/dialogue.png"
 logo_style_override = "filter: brightness(0) invert(1);" 
 
 try:
-    # Use o caminho completo (LOGO_PATH) em vez de só "logo.jpg"
     with open(LOGO_PATH, "rb") as f:
         bytes_data = f.read()
         base64_str = base64.b64encode(bytes_data).decode()
@@ -471,8 +447,6 @@ except FileNotFoundError:
     st.sidebar.warning("Arquivo 'logo.jpg' não encontrado. Usando logo padrão.")
 except Exception as e:
     st.sidebar.error(f"Erro ao carregar 'logo.jpg': {e}. Usando logo padrão.")
-# --- AJUSTE DE CAMINHO DA LOGO (FIM) ---
-
 
 st.markdown(
     f"""
@@ -505,7 +479,6 @@ if mapa_files:
     for mapa_file in mapa_files:
         mapas_carregados[mapa_file.name] = mapa_file
     st.sidebar.success(f"{len(mapas_carregados)} mapas carregados.", icon="✅")
-
 
 if uploaded_file is None:
     st.info("Por favor, carregue o arquivo Excel de análise na barra lateral para começar.")
@@ -585,7 +558,7 @@ if pagina_selecionada == "Resumo Geral":
         orientation='h',
         text='Média',
         color='Média',
-        color_continuous_scale=px.colors.sequential.Viridis, # AJUSTE: Alterado de Magma para Viridis (azul/verde)
+        color_continuous_scale=px.colors.sequential.Viridis,
         range_x=[0, 5.5], 
         template="plotly_dark"
     )
@@ -796,7 +769,6 @@ elif pagina_selecionada == "Dimensões":
                 else:
                     st.error("Encontrei o cabeçalho, mas as colunas 'INSTITUIÇÃO', 'POTENCIAL' ou 'LOCALIZAÇÃO' parecem estar ausentes.")
 
-
 elif pagina_selecionada == "Análise Legislativa":
     st.header("Análise Legislativa (ADE vs ZR3)")
     st.caption("Comparativo gráfico e de parâmetros-chave para as duas zonas.")
@@ -861,7 +833,6 @@ elif pagina_selecionada == "Análise Legislativa":
                 
                 df_usos['Categoria'] = df_usos[col_adeq].fillna('Inadequado').astype(str).str.strip().str.title()
                 df_usos['Categoria'] = df_usos['Categoria'].replace(['Nan', 'Não Adequado', ''], 'Inadequado')
-
                 
                 adequados = df_usos[df_usos['Categoria'] == 'Adequado'][col_usos]
                 proibidos = df_usos[df_usos['Categoria'] == 'Proibido'][col_usos]
@@ -929,9 +900,9 @@ elif pagina_selecionada == "Análise Legislativa":
                 color="Zoneamento",
                 barmode="group",
                 template="plotly_dark", 
-                color_discrete_map={ # AJUSTE: Alterado para azul e verde
-                    "ADE (Local)": "#007BFF",  # Azul vibrante
-                    "ZR3 (Entorno)": "#28A745" # Verde vibrante
+                color_discrete_map={
+                    "ADE (Local)": "#007BFF",
+                    "ZR3 (Entorno)": "#28A745"
                 },
                 title="Comparativo de Zoneamento: ADE (Local) vs. ZR3 (Entorno)",
                 log_y=True,
@@ -951,7 +922,6 @@ elif pagina_selecionada == "Análise Legislativa":
             st.info("Não foram encontrados parâmetros numéricos comuns (Ex: 'Taxa de Ocupação') nas abas de legislação para gerar o gráfico.")
     else:
         st.error("Não foi possível encontrar as colunas de 'Indicador' ou 'Valor Indicado' nas tabelas de parâmetros de legislação.")
-
 
 elif pagina_selecionada == "Relatório de Visita":
     st.header("Relatório de Visita de Campo")
@@ -1006,10 +976,10 @@ elif pagina_selecionada == "Relatório de Visita":
                         title="Fontes de Ruído Predominantes",
                         template="plotly_dark", 
                         color="Fonte",
-                        color_discrete_map={ # AJUSTE: Alterado para azul, verde e azul claro
-                            "Trânsito": "#007BFF",  # Azul
-                            "Natureza": "#28A745", # Verde
-                            "Pessoas": "#B0E0E6"  # Azul pálido (próximo do branco)
+                        color_discrete_map={
+                            "Trânsito": "#007BFF",
+                            "Natureza": "#28A745",
+                            "Pessoas": "#B0E0E6"
                         }
                     )
                     fig_ruido.update_layout(
@@ -1101,32 +1071,30 @@ elif pagina_selecionada == "Estratégia e Riscos":
             else:
                 st.error("Colunas de 'Aspecto' ou 'Observações' não encontradas na aba Visita.")
 
-
 elif pagina_selecionada == "🤖 IA Chatbot":
     st.header("🤖 Chatbot de Análise")
     st.caption("Faça perguntas sobre os dados da análise (Ex: Qual a estratégia para a dimensão social?)")
     
-    # AJUSTE: Código para buscar a chave de API dos Secrets do Streamlit
     try:
-        api_key = st.secrets["GEMINI_API_KEY"]
-    except:
-        api_key = st.sidebar.text_input(
-            "Insira sua Chave de API do Google Gemini:", 
+        hf_token = st.secrets["HUGGINGFACE_API_TOKEN"]
+    except Exception as e:
+        hf_token = st.sidebar.text_input(
+            "Insira seu Token do Hugging Face:", 
             type="password", 
-            help="Obtenha sua chave no Google AI Studio para ativar o chatbot."
+            help="Obtenha em: huggingface.co/settings/tokens"
         )
     
-    if not api_key:
-        st.warning("Por favor, insira uma chave de API do Google Gemini na barra lateral (ou configure nos Secrets) para ativar o chatbot.")
-        st.stop()
-    
-    try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
-    except Exception as e:
-        st.error(f"Erro ao configurar a API do Gemini (verifique sua chave): {e}")
+    if not hf_token:
+        st.warning("Por favor, insira um Token do Hugging Face na barra lateral para ativar o chatbot.")
         st.stop()
 
+    try:
+        model_id = "mistralai/Mistral-7B-Instruct-v0.1" 
+        client = InferenceClient(model=model_id, token=hf_token)
+    except Exception as e:
+        st.error(f"Erro ao inicializar o cliente do Hugging Face: {e}")
+        st.stop()
+        
     if "messages" not in st.session_state:
         st.session_state.messages = []
         st.session_state.messages.append({
@@ -1168,19 +1136,13 @@ elif pagina_selecionada == "🤖 IA Chatbot":
                     if "kpis (econômica)" in sheet_name.lower():
                         nome_real_economica_ia = sheet_name
                         break
-            except Exception:
-                pass 
+            except Exception: pass 
 
             if nome_real_economica_ia:
                 try:
                     uploaded_file.seek(0)
-                    df_eco_raw_ia = pd.read_excel(
-                        uploaded_file, 
-                        sheet_name=nome_real_economica_ia, 
-                        header=None 
-                    )
-                except Exception:
-                    pass 
+                    df_eco_raw_ia = pd.read_excel(uploaded_file, sheet_name=nome_real_economica_ia, header=None)
+                except Exception: pass 
 
             if not df_eco_raw_ia.empty:
                 header_row_index_ia = -1
@@ -1188,86 +1150,78 @@ elif pagina_selecionada == "🤖 IA Chatbot":
                     row_values_ia = [clean_str(val) for val in row.values]
                     has_instituicao_ia = any('instituição' in val or 'instituicao' in val for val in row_values_ia)
                     has_potencial_ia = any('potencial' in val for val in row_values_ia)
-                    
                     if has_instituicao_ia and has_potencial_ia:
                         header_row_index_ia = i
                         break
-                        
                 if header_row_index_ia != -1:
                     df_stakeholders_ia = df_eco_raw_ia.loc[header_row_index_ia:].copy()
-                    
                     header_values_ia = df_stakeholders_ia.iloc[0]
                     new_cols_ia = []
                     counts_ia = {}
                     for col_ia in header_values_ia:
                         col_name_ia = clean_str(col_ia)
-                        if col_name_ia == "nan" or col_name_ia == "":
-                            col_name_ia = "unnamed"
+                        if col_name_ia == "nan" or col_name_ia == "": col_name_ia = "unnamed"
                         if col_name_ia in counts_ia:
                             counts_ia[col_name_ia] += 1
                             new_cols_ia.append(f"{col_name_ia}_{counts_ia[col_name_ia]}")
                         else:
                             counts_ia[col_name_ia] = 0
                             new_cols_ia.append(col_name_ia)
-                    
                     df_stakeholders_ia.columns = new_cols_ia
                     df_stakeholders_ia = df_stakeholders_ia.iloc[1:]
-                    
                     col_inst_ia = encontrar_coluna(df_stakeholders_ia, ['instituição', 'instituicao'])
                     col_pot_ia = encontrar_coluna(df_stakeholders_ia, ['potencial'])
-                    
                     if col_inst_ia and col_pot_ia:
                         df_stakeholders_ia = df_stakeholders_ia.dropna(subset=[col_inst_ia, col_pot_ia])
                         contexto_stakeholders = df_stakeholders_ia.to_string()
 
             contexto_dados = f"""
-            DADOS DE CONTEXTO ESTRATÉGICO:
-            
             Métricas Chave:
-            - Média da Dimensão Física: {dados['metricas']['media_fisica']:.2f}
-            - Média da Dimensão Social: {dados['metricas']['media_social']:.2f}
-            - Média da Dimensão Ambiental: {dados['metricas']['media_ambiental']:.2f}
-            - Média da Dimensão Urbana: {dados['metricas']['media_urbana']:.2f}
-            - Média da Dimensão Econômica: {dados['metricas']['media_economica']:.2f}
-            - Média da Dimensão Sensorial: {dados['metricas']['media_sensorial']:.2f}
+            - Média Física: {dados['metricas']['media_fisica']:.2f}, Média Social: {dados['metricas']['media_social']:.2f}, Média Ambiental: {dados['metricas']['media_ambiental']:.2f}
+            - Média Urbana: {dados['metricas']['media_urbana']:.2f}, Média Econômica: {dados['metricas']['media_economica']:.2f}, Média Sensorial: {dados['metricas']['media_sensorial']:.2f}
             - Índice Territorial (IT) Total: {dados['metricas']['it_total']:.2f}
-            
-            Resumo das Estratégias (Aba 'Resumo Analítico'):
-            {contexto_resumo}
-            
-            Observações da Visita de Campo (Aba 'Dados de campo'):
-            {contexto_visita}
-
-            Parceiros e Stakeholders (da aba Econômica):
-            {contexto_stakeholders}
+            Resumo das Estratégias: {contexto_resumo}
+            Observações da Visita: {contexto_visita}
+            Parceiros e Stakeholders: {contexto_stakeholders}
             """
         except Exception as e:
             st.error(f"Erro ao montar o contexto para a IA. Detalhe: {e}")
             contexto_dados = "Erro ao carregar dados."
 
         prompt_para_ia = f"""
-        Você é um assistente de arquitetura sênior do Studio Cosmos.
-        Sua tarefa é responder perguntas sobre uma análise de viabilidade de terreno.
-        Use **exclusivamente** os {contexto_dados} para formular sua resposta.
-        
-        Se a informação não estiver no contexto, diga "Essa informação não foi encontrada nos dados carregados".
-        Não invente números ou dados que não estejam no contexto.
-        Seja objetivo, profissional e use markdown (como negrito) para destacar os números e pontos-chave.
-        
-        PERGUNTA DO USUÁRIOS:
-        {prompt}
-        """
+[INST] Você é um assistente de arquitetura sênior do Studio Cosmos.
+Sua tarefa é responder perguntas sobre uma análise de viabilidade de terreno.
+Use **exclusivamente** os dados abaixo para formular sua resposta.
+
+DADOS:
+{contexto_dados}
+
+Se a informação não estiver no contexto, diga "Essa informação não foi encontrada nos dados carregados".
+Não invente números ou dados que não estejam no contexto.
+Seja objetivo, profissional e use markdown (como negrito) para destacar os pontos-chave.
+
+PERGUNTA DO USUÁRIO:
+{prompt} [/INST]
+"""
 
         try:
-            with st.spinner("Analisando..."):
-                response = model.generate_content(prompt_para_ia)
-                resposta_ia = response.text
+            with st.spinner("Analisando... (O modelo gratuito pode estar iniciando, aguarde)"):
+                response = client.text_generation(
+                    prompt_para_ia,
+                    max_new_tokens=512,
+                    temperature=0.7,
+                    top_p=0.95,
+                    repetition_penalty=1.1,
+                )
+                
+                resposta_ia = response
             
             with st.chat_message("assistant"):
                 st.markdown(resposta_ia)
             st.session_state.messages.append({"role": "assistant", "content": resposta_ia})
         
         except Exception as e:
-            st.error(f"Erro ao contactar a IA: {e}")
+            st.error(f"Erro ao contactar a IA (Hugging Face): {e}")
+            st.info("Se o modelo estiver sendo carregado (cold start), este erro é normal. Tente enviar sua pergunta novamente em 30 segundos.")
             msg_erro = f"Desculpe, não consegui processar sua pergunta. Erro: {e}"
             st.session_state.messages.append({"role": "assistant", "content": msg_erro})
