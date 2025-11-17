@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import numpy as np
 import re
 from streamlit_option_menu import option_menu
-import base64 
+import base64
 import pathlib
 from huggingface_hub import InferenceClient
 
@@ -141,19 +141,67 @@ def extrair_dado_visita(df, aspecto_procurado, col_aspecto, col_obs):
         pass
     return "N/A"
 
+# ==============================================================================
+# FUNÇÃO CORRIGIDA (PROBLEMA 2: 1.5 virava 15)
+# ==============================================================================
 def extrair_primeiro_numero(texto):
+    """
+    Extrai o primeiro número de uma string, lidando com decimais em 
+    formato brasileiro (1.500,10) e americano (1,500.10), e
+    casos simples (1,5 ou 1.5).
+    """
     if not isinstance(texto, str):
         return None
-    texto_limpo = str(texto).replace('.', '')
-    texto_limpo = texto_limpo.replace(',', '.')
     
-    match = re.search(r'(\d+\.?\d*)', texto_limpo)
-    if match:
-        try:
-            return float(match.group(1))
-        except ValueError:
-            return None
-    return None
+    # Encontra a primeira sequência de dígitos, pontos e vírgulas
+    match = re.search(r'(\d[\d.,]*)', str(texto))
+    if not match:
+        return None
+    
+    texto_limpo = match.group(1)
+    
+    # Contabiliza os separadores
+    num_dots = texto_limpo.count('.')
+    num_commas = texto_limpo.count(',')
+
+    # Caso 1: Ambos presentes (Ex: 1.500,20 ou 1,500.20)
+    if num_dots > 0 and num_commas > 0:
+        if texto_limpo.rfind('.') > texto_limpo.rfind(','):
+            # Ponto é decimal: "1,500.20"
+            texto_limpo = texto_limpo.replace(',', '')
+        else:
+            # Vírgula é decimal: "1.500,20"
+            texto_limpo = texto_limpo.replace('.', '').replace(',', '.')
+    
+    # Caso 2: Apenas vírgulas (Ex: 1,5 ou 1,500)
+    elif num_commas > 0:
+        # Se a última vírgula for seguida por 3 dígitos (e só houver ela), é milhar
+        if num_commas == 1 and len(texto_limpo.split(',')[-1]) == 3:
+             # Ex: "1,500"
+             texto_limpo = texto_limpo.replace(',', '')
+        else:
+             # Ex: "1,5" ou "1.500,20" (após lógica anterior)
+             texto_limpo = texto_limpo.replace(',', '.')
+
+    # Caso 3: Apenas pontos (Ex: 1.5 ou 1.500)
+    elif num_dots > 0:
+        # Se o último ponto for seguido por 3 dígitos (e só houver ele), é milhar
+        if num_dots == 1 and len(texto_limpo.split('.')[-1]) == 3:
+             # Ex: "1.500"
+             texto_limpo = texto_limpo.replace('.', '')
+        else:
+             # Ex: "1.5" ou "1.50"
+             pass # O formato já está correto
+
+    # Caso 4: Sem separadores (Ex: 1500)
+    # Não faz nada
+
+    # Tenta a conversão final
+    try:
+        return float(texto_limpo)
+    except ValueError:
+        return None
+
 
 def clean_str(s):
     return str(s).lower().strip()
@@ -233,27 +281,48 @@ def carregar_dados_excel(ficheiro_carregado):
             else:
                 metricas[f'media_{chave}'] = 0
         
+        # ==============================================================================
+        # BLOCO CORRIGIDO (PROBLEMA 1: Índice Territorial NaN)
+        # ==============================================================================
         df_matriz = abas_encontradas['matriz']
-        metricas['it_total'] = 0.0
+        metricas['it_total'] = 0.0 # Valor padrão
         
         if not df_matriz.empty:
             try:
-                col_dimensao = encontrar_coluna(df_matriz, ['DIMENSÃO'])
-                if not col_dimensao: col_dimensao = df_matriz.columns[0]
-                
-                it_row = df_matriz[df_matriz[col_dimensao].str.contains('Índice Territorial', na=False, case=False)]
-                
-                if not it_row.empty:
-                    col_it_valor = encontrar_coluna(df_matriz, ['ESCALA (0–5)', 'ESCALA'])
-                    if not col_it_valor: col_it_valor = df_matriz.columns[2]
+                it_valor_str = None
+                # Procura em todas as colunas do dataframe
+                for col in df_matriz.columns:
+                    # Converte a coluna para string para poder usar o .str e o regex
+                    # O regex procura 'Índice Territorial', qualquer coisa (.*?), 
+                    # os dois pontos (:) e captura o número (com vírgula ou ponto)
+                    matches = df_matriz[col].astype(str).str.extract(r'Índice Territorial.*?: (\d+[,.]\d+)')
                     
-                    valor_it = it_row.iloc[0][col_it_valor]
-                    metricas['it_total'] = pd.to_numeric(valor_it, errors='coerce')
+                    # Filtra os resultados que não são nulos
+                    non_na_matches = matches.dropna()
+                    
+                    if not non_na_matches.empty:
+                        it_valor_str = non_na_matches.iloc[0, 0] # Pega o primeiro valor (ex: "3,23")
+                        break # Para de procurar assim que achar
+                
+                if it_valor_str:
+                    # Limpa o valor (troca vírgula por ponto)
+                    valor_limpo = str(it_valor_str).replace(',', '.')
+                    metricas['it_total'] = pd.to_numeric(valor_limpo, errors='coerce')
+                    
+                    # Se a conversão falhar, volta para 0
+                    if pd.isna(metricas['it_total']):
+                         metricas['it_total'] = 0.0
+                         st.warning(f"Encontrei o valor '{it_valor_str}' para o IT, mas falhei ao convertê-lo.")
                 else:
-                    st.warning("Não foi possível encontrar a linha 'Índice Territorial' na aba Matriz.")
-            
+                    metricas['it_total'] = 0.0
+                    st.warning("Não foi possível encontrar o 'Índice Territorial' (Ex: '...: 3,23') na aba Matriz.")
+                    
             except Exception as e:
-                st.error(f"Erro ao processar a aba 'Matriz': {e}")
+                metricas['it_total'] = 0.0
+                st.error(f"Erro ao processar a aba 'Matriz' para o Índice Territorial: {e}")
+        # ==============================================================================
+        # FIM DO BLOCO CORRIGIDO
+        # ==============================================================================
 
         abas_encontradas['metricas'] = metricas
         return abas_encontradas
@@ -431,7 +500,12 @@ def processar_tabela_usos(df_raw):
     df_processado = df_processado.dropna(how='all')
     return df_processado
 
-SCRIPT_DIR = pathlib.Path(__file__).parent
+# Tenta encontrar o __file__ para o SCRIPT_DIR, senão usa o diretório atual
+try:
+    SCRIPT_DIR = pathlib.Path(__file__).parent
+except NameError:
+    SCRIPT_DIR = pathlib.Path.cwd()
+    
 LOGO_PATH = SCRIPT_DIR / "logo.jpg"
 
 logo_src = "https://raw.githubusercontent.com/streamlit/templates/main/multipage-apps/assets/dialogue.png"
@@ -753,11 +827,16 @@ elif pagina_selecionada == "Dimensões":
                                 potencial_texto = row[col_potencial_texto]
 
                                 if pd.notna(potencial_texto) and str(potencial_texto).strip():
-                                    topicos = [t.strip() for t in str(potencial_texto).split('.') if t.strip()]
+                                    # Quebra o texto em tópicos (assumindo que são separados por '.')
+                                    topicos = [t.strip() for t in str(potencial_texto).split('\n') if t.strip()]
                                     
                                     markdown_formatado = ""
                                     for topico in topicos:
-                                        markdown_formatado += f"- {topico}.\n"
+                                        # Adiciona um marcador de lista se não for um título
+                                        if ":" not in topico and len(topico) < 50:
+                                             markdown_formatado += f"**{topico}**\n"
+                                        else:
+                                             markdown_formatado += f"- {topico}\n"
                                     
                                     if markdown_formatado:
                                         st.markdown(markdown_formatado)
@@ -1031,7 +1110,7 @@ elif pagina_selecionada == "Estratégia e Riscos":
             
             if not df_resumo_display.empty:
                 df_resumo_display = df_resumo_display.set_index(col_dimensao_nome)
-        
+    
         else:
             st.error("Não foi possível encontrar a coluna 'DIMENSÃO' no Resumo Analítico.")
             st.stop()
