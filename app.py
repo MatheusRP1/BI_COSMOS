@@ -141,62 +141,37 @@ def extrair_dado_visita(df, aspecto_procurado, col_aspecto, col_obs):
         pass
     return "N/A"
 
-# ==============================================================================
-# FUNÇÃO CORRIGIDA (PROBLEMA 2: 1.5 virava 15)
-# ==============================================================================
 def extrair_primeiro_numero(texto):
-    """
-    Extrai o primeiro número de uma string, lidando com decimais em 
-    formato brasileiro (1.500,10) e americano (1,500.10), e
-    casos simples (1,5 ou 1.5).
-    """
     if not isinstance(texto, str):
         return None
     
-    # Encontra a primeira sequência de dígitos, pontos e vírgulas
     match = re.search(r'(\d[\d.,]*)', str(texto))
     if not match:
         return None
     
     texto_limpo = match.group(1)
     
-    # Contabiliza os separadores
     num_dots = texto_limpo.count('.')
     num_commas = texto_limpo.count(',')
 
-    # Caso 1: Ambos presentes (Ex: 1.500,20 ou 1,500.20)
     if num_dots > 0 and num_commas > 0:
         if texto_limpo.rfind('.') > texto_limpo.rfind(','):
-            # Ponto é decimal: "1,500.20"
             texto_limpo = texto_limpo.replace(',', '')
         else:
-            # Vírgula é decimal: "1.500,20"
             texto_limpo = texto_limpo.replace('.', '').replace(',', '.')
     
-    # Caso 2: Apenas vírgulas (Ex: 1,5 ou 1,500)
     elif num_commas > 0:
-        # Se a última vírgula for seguida por 3 dígitos (e só houver ela), é milhar
         if num_commas == 1 and len(texto_limpo.split(',')[-1]) == 3:
-             # Ex: "1,500"
              texto_limpo = texto_limpo.replace(',', '')
         else:
-             # Ex: "1,5" ou "1.500,20" (após lógica anterior)
              texto_limpo = texto_limpo.replace(',', '.')
 
-    # Caso 3: Apenas pontos (Ex: 1.5 ou 1.500)
     elif num_dots > 0:
-        # Se o último ponto for seguido por 3 dígitos (e só houver ele), é milhar
         if num_dots == 1 and len(texto_limpo.split('.')[-1]) == 3:
-             # Ex: "1.500"
              texto_limpo = texto_limpo.replace('.', '')
         else:
-             # Ex: "1.5" ou "1.50"
-             pass # O formato já está correto
+             pass 
 
-    # Caso 4: Sem separadores (Ex: 1500)
-    # Não faz nada
-
-    # Tenta a conversão final
     try:
         return float(texto_limpo)
     except ValueError:
@@ -281,48 +256,27 @@ def carregar_dados_excel(ficheiro_carregado):
             else:
                 metricas[f'media_{chave}'] = 0
         
-        # ==============================================================================
-        # BLOCO CORRIGIDO (PROBLEMA 1: Índice Territorial NaN)
-        # ==============================================================================
         df_matriz = abas_encontradas['matriz']
-        metricas['it_total'] = 0.0 # Valor padrão
+        metricas['it_total'] = 0.0
         
         if not df_matriz.empty:
             try:
-                it_valor_str = None
-                # Procura em todas as colunas do dataframe
-                for col in df_matriz.columns:
-                    # Converte a coluna para string para poder usar o .str e o regex
-                    # O regex procura 'Índice Territorial', qualquer coisa (.*?), 
-                    # os dois pontos (:) e captura o número (com vírgula ou ponto)
-                    matches = df_matriz[col].astype(str).str.extract(r'Índice Territorial.*?: (\d+[,.]\d+)')
-                    
-                    # Filtra os resultados que não são nulos
-                    non_na_matches = matches.dropna()
-                    
-                    if not non_na_matches.empty:
-                        it_valor_str = non_na_matches.iloc[0, 0] # Pega o primeiro valor (ex: "3,23")
-                        break # Para de procurar assim que achar
+                col_vp = encontrar_coluna(df_matriz, ['VALOR PONDERADO', 'VALOR'])
                 
-                if it_valor_str:
-                    # Limpa o valor (troca vírgula por ponto)
-                    valor_limpo = str(it_valor_str).replace(',', '.')
-                    metricas['it_total'] = pd.to_numeric(valor_limpo, errors='coerce')
+                if col_vp:
+                    valores_ponderados = pd.to_numeric(df_matriz[col_vp], errors='coerce')
+                    soma_total = valores_ponderados.dropna().sum()
+                    metricas['it_total'] = soma_total
                     
-                    # Se a conversão falhar, volta para 0
-                    if pd.isna(metricas['it_total']):
-                         metricas['it_total'] = 0.0
-                         st.warning(f"Encontrei o valor '{it_valor_str}' para o IT, mas falhei ao convertê-lo.")
+                    if soma_total == 0:
+                        st.warning("A coluna 'VALOR PONDERADO' foi encontrada, mas a soma é 0. Verifique os dados.")
                 else:
+                    st.error("Não foi possível encontrar a coluna 'VALOR PONDERADO' na aba 'Matriz' para calcular o Índice.")
                     metricas['it_total'] = 0.0
-                    st.warning("Não foi possível encontrar o 'Índice Territorial' (Ex: '...: 3,23') na aba Matriz.")
                     
             except Exception as e:
                 metricas['it_total'] = 0.0
-                st.error(f"Erro ao processar a aba 'Matriz' para o Índice Territorial: {e}")
-        # ==============================================================================
-        # FIM DO BLOCO CORRIGIDO
-        # ==============================================================================
+                st.error(f"Erro ao CALCULAR o Índice Territorial a partir da 'Matriz': {e}")
 
         abas_encontradas['metricas'] = metricas
         return abas_encontradas
@@ -500,7 +454,6 @@ def processar_tabela_usos(df_raw):
     df_processado = df_processado.dropna(how='all')
     return df_processado
 
-# Tenta encontrar o __file__ para o SCRIPT_DIR, senão usa o diretório atual
 try:
     SCRIPT_DIR = pathlib.Path(__file__).parent
 except NameError:
@@ -827,12 +780,10 @@ elif pagina_selecionada == "Dimensões":
                                 potencial_texto = row[col_potencial_texto]
 
                                 if pd.notna(potencial_texto) and str(potencial_texto).strip():
-                                    # Quebra o texto em tópicos (assumindo que são separados por '.')
                                     topicos = [t.strip() for t in str(potencial_texto).split('\n') if t.strip()]
                                     
                                     markdown_formatado = ""
                                     for topico in topicos:
-                                        # Adiciona um marcador de lista se não for um título
                                         if ":" not in topico and len(topico) < 50:
                                              markdown_formatado += f"**{topico}**\n"
                                         else:
@@ -1282,7 +1233,6 @@ Resposta:
 
         try:
             with st.spinner("Analisando..."):
-                # CORREÇÃO: Troca para a função correta do Flan-T5
                 response = client.text2text_generation(
                     prompt_para_ia,
                     max_new_tokens=512,
@@ -1298,7 +1248,6 @@ Resposta:
             st.session_state.messages.append({"role": "assistant", "content": resposta_ia})
         
         except Exception as e:
-            # CORREÇÃO: Mostrar o erro real no chat para debugging.
             erro_real = f"Erro DETALHADO do Hugging Face: {e}"
             st.error(erro_real)
             st.session_state.messages.append({"role": "assistant", "content": erro_real})
