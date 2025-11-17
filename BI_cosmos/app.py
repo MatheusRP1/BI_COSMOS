@@ -7,6 +7,7 @@ import google.generativeai as genai
 import re
 from streamlit_option_menu import option_menu
 import base64 
+import pathlib # Adicionado para corrigir o caminho da logo
 
 st.set_page_config(
     page_title="Studio Cosmos - Análise de Viabilidade",
@@ -449,11 +450,19 @@ def processar_tabela_usos(df_raw):
     return df_processado
 # --- FIM DAS NOVAS FUNÇÕES LEGISLATIVAS ---
 
+
+# --- AJUSTE DE CAMINHO DA LOGO (INÍCIO) ---
+# Define o caminho para a pasta onde o script app.py está
+SCRIPT_DIR = pathlib.Path(__file__).parent
+# Define o caminho completo para a logo
+LOGO_PATH = SCRIPT_DIR / "logo.jpg"
+
 logo_src = "https://raw.githubusercontent.com/streamlit/templates/main/multipage-apps/assets/dialogue.png"
 logo_style_override = "filter: brightness(0) invert(1);" 
 
 try:
-    with open("logo.jpg", "rb") as f:
+    # Use o caminho completo (LOGO_PATH) em vez de só "logo.jpg"
+    with open(LOGO_PATH, "rb") as f:
         bytes_data = f.read()
         base64_str = base64.b64encode(bytes_data).decode()
         logo_src = f"data:image/jpeg;base64,{base64_str}"
@@ -462,6 +471,8 @@ except FileNotFoundError:
     st.sidebar.warning("Arquivo 'logo.jpg' não encontrado. Usando logo padrão.")
 except Exception as e:
     st.sidebar.error(f"Erro ao carregar 'logo.jpg': {e}. Usando logo padrão.")
+# --- AJUSTE DE CAMINHO DA LOGO (FIM) ---
+
 
 st.markdown(
     f"""
@@ -1095,14 +1106,18 @@ elif pagina_selecionada == "🤖 IA Chatbot":
     st.header("🤖 Chatbot de Análise")
     st.caption("Faça perguntas sobre os dados da análise (Ex: Qual a estratégia para a dimensão social?)")
     
-    api_key = st.sidebar.text_input(
-        "Insira sua Chave de API do Google Gemini:", 
-        type="password", 
-        help="Obtenha sua chave no Google AI Studio para ativar o chatbot."
-    )
+    # AJUSTE: Código para buscar a chave de API dos Secrets do Streamlit
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    except:
+        api_key = st.sidebar.text_input(
+            "Insira sua Chave de API do Google Gemini:", 
+            type="password", 
+            help="Obtenha sua chave no Google AI Studio para ativar o chatbot."
+        )
     
     if not api_key:
-        st.warning("Por favor, insira uma chave de API do Google Gemini na barra lateral para ativar o chatbot.")
+        st.warning("Por favor, insira uma chave de API do Google Gemini na barra lateral (ou configure nos Secrets) para ativar o chatbot.")
         st.stop()
     
     try:
@@ -1239,7 +1254,7 @@ elif pagina_selecionada == "🤖 IA Chatbot":
         Não invente números ou dados que não estejam no contexto.
         Seja objetivo, profissional e use markdown (como negrito) para destacar os números e pontos-chave.
         
-        PERGUNTA DO USUÁRIO:
+        PERGUNTA DO USUÁRIOS:
         {prompt}
         """
 
