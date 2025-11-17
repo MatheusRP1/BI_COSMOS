@@ -1119,29 +1119,15 @@ elif pagina_selecionada == "🤖 IA Chatbot":
         st.stop()
 
     try:
-        model_id = "google/flan-t5-base" 
+        model_id = "google/gemma-2-9b-it" 
         client = InferenceClient(model=model_id, token=hf_token)
     except Exception as e:
         st.error(f"Erro ao inicializar o cliente do Hugging Face: {e}")
+        st.error("Verifique se você aceitou os termos do modelo 'google/gemma-2-9b-it' no site do Hugging Face.")
         st.stop()
-        
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-        st.session_state.messages.append({
-            "role": "assistant", 
-            "content": "Olá! Sou o assistente de análise do Studio Cosmos. Pergunte-me sobre os dados carregados."
-        })
-
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    if prompt := st.chat_input("Qual a sua pergunta?"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        try:
+    
+    try:
+        with st.spinner("Preparando o contexto para a IA..."):
             contexto_resumo = "Nenhum resumo analítico encontrado."
             if not dados['resumo_analitico'].empty:
                 col_dimensao_nome = encontrar_coluna(dados['resumo_analitico'], ['DIMENSÃO'])
@@ -1210,38 +1196,60 @@ elif pagina_selecionada == "🤖 IA Chatbot":
             - Média Física: {dados['metricas']['media_fisica']:.2f}, Média Social: {dados['metricas']['media_social']:.2f}, Média Ambiental: {dados['metricas']['media_ambiental']:.2f}
             - Média Urbana: {dados['metricas']['media_urbana']:.2f}, Média Econômica: {dados['metricas']['media_economica']:.2f}, Média Sensorial: {dados['metricas']['media_sensorial']:.2f}
             - Índice Territorial (IT) Total: {dados['metricas']['it_total']:.2f}
+            
             Resumo das Estratégias: {contexto_resumo}
+            
             Observações da Visita: {contexto_visita}
+            
             Parceiros e Stakeholders: {contexto_stakeholders}
             """
-        except Exception as e:
-            st.error(f"Erro ao montar o contexto para a IA. Detalhe: {e}")
-            contexto_dados = "Erro ao carregar dados."
+            
+            st.session_state.contexto_dados = contexto_dados
+            
+    except Exception as e:
+        st.error(f"Erro ao montar o contexto para a IA. Detalhe: {e}")
+        if "contexto_dados" not in st.session_state:
+            st.session_state.contexto_dados = "Erro ao carregar dados."
+            
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+        st.session_state.messages.append({
+            "role": "assistant", 
+            "content": "Olá! Sou o assistente de análise do Studio Cosmos. Pergunte-me sobre os dados carregados."
+        })
 
-        prompt_para_ia = f"""
-Responda à pergunta do usuário usando apenas o contexto fornecido.
-Se a informação não estiver no contexto, diga "Essa informação não foi encontrada nos dados carregados".
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-Contexto:
-{contexto_dados}
-
-Pergunta:
-{prompt}
-
-Resposta:
-"""
+    if prompt := st.chat_input("Qual a sua pergunta?"):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
         try:
+            messages_for_api = []
+            
+            system_prompt = f"""Você é um assistente de análise de dados. Responda à pergunta do usuário usando APENAS o contexto fornecido. Se a informação não estiver no contexto, diga "Essa informação não foi encontrada nos dados carregados".
+            
+            Contexto:
+            {st.session_state.contexto_dados}
+            """
+            messages_for_api.append({"role": "system", "content": system_prompt})
+            
+            for msg in st.session_state.messages[1:]:
+                messages_for_api.append({"role": msg["role"], "content": msg["content"]})
+            
+            
             with st.spinner("Analisando..."):
-                response = client.text2text_generation(
-                    prompt_para_ia,
-                    max_new_tokens=512,
-                    temperature=0.7,
+                response = client.chat_completion(
+                    messages=messages_for_api,
+                    max_tokens=1024,
+                    temperature=0.5,
                     top_p=0.95,
-                    repetition_penalty=1.1,
                 )
                 
-                resposta_ia = response
+                resposta_ia = response.choices[0].message.content
             
             with st.chat_message("assistant"):
                 st.markdown(resposta_ia)
