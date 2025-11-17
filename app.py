@@ -1089,7 +1089,8 @@ elif pagina_selecionada == "🤖 IA Chatbot":
         st.stop()
 
     try:
-        model_id = "mistralai/Mistral-7B-Instruct-v0.1" 
+        # AJUSTE: Troca para um modelo mais leve e rápido
+        model_id = "google/flan-t5-base" 
         client = InferenceClient(model=model_id, token=hf_token)
     except Exception as e:
         st.error(f"Erro ao inicializar o cliente do Hugging Face: {e}")
@@ -1188,24 +1189,22 @@ elif pagina_selecionada == "🤖 IA Chatbot":
             st.error(f"Erro ao montar o contexto para a IA. Detalhe: {e}")
             contexto_dados = "Erro ao carregar dados."
 
+        # AJUSTE: Novo formato de prompt para o google/flan-t5
         prompt_para_ia = f"""
-[INST] Você é um assistente de arquitetura sênior do Studio Cosmos.
-Sua tarefa é responder perguntas sobre uma análise de viabilidade de terreno.
-Use **exclusivamente** os dados abaixo para formular sua resposta.
+Responda à pergunta do usuário usando apenas o contexto fornecido.
+Se a informação não estiver no contexto, diga "Essa informação não foi encontrada nos dados carregados".
 
-DADOS:
+Contexto:
 {contexto_dados}
 
-Se a informação não estiver no contexto, diga "Essa informação não foi encontrada nos dados carregados".
-Não invente números ou dados que não estejam no contexto.
-Seja objetivo, profissional e use markdown (como negrito) para destacar os pontos-chave.
+Pergunta:
+{prompt}
 
-PERGUNTA DO USUÁRIO:
-{prompt} [/INST]
+Resposta:
 """
 
         try:
-            with st.spinner("Analisando... (O modelo gratuito pode estar iniciando, aguarde)"):
+            with st.spinner("Analisando..."):
                 response = client.text_generation(
                     prompt_para_ia,
                     max_new_tokens=512,
