@@ -1,0 +1,7 @@
+streamlit
+pandas
+openpyxl
+plotly
+streamlit-option-menu
+numpy
+huggingface_hub
