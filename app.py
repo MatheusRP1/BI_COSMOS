@@ -1089,7 +1089,6 @@ elif pagina_selecionada == "🤖 IA Chatbot":
         st.stop()
 
     try:
-        # AJUSTE: Troca para um modelo mais leve e rápido
         model_id = "google/flan-t5-base" 
         client = InferenceClient(model=model_id, token=hf_token)
     except Exception as e:
@@ -1189,7 +1188,6 @@ elif pagina_selecionada == "🤖 IA Chatbot":
             st.error(f"Erro ao montar o contexto para a IA. Detalhe: {e}")
             contexto_dados = "Erro ao carregar dados."
 
-        # AJUSTE: Novo formato de prompt para o google/flan-t5
         prompt_para_ia = f"""
 Responda à pergunta do usuário usando apenas o contexto fornecido.
 Se a informação não estiver no contexto, diga "Essa informação não foi encontrada nos dados carregados".
@@ -1205,7 +1203,8 @@ Resposta:
 
         try:
             with st.spinner("Analisando..."):
-                response = client.text_generation(
+                # CORREÇÃO: Troca para a função correta do Flan-T5
+                response = client.text2text_generation(
                     prompt_para_ia,
                     max_new_tokens=512,
                     temperature=0.7,
@@ -1220,7 +1219,7 @@ Resposta:
             st.session_state.messages.append({"role": "assistant", "content": resposta_ia})
         
         except Exception as e:
-            st.error(f"Erro ao contactar a IA (Hugging Face): {e}")
-            st.info("Se o modelo estiver sendo carregado (cold start), este erro é normal. Tente enviar sua pergunta novamente em 30 segundos.")
-            msg_erro = f"Desculpe, não consegui processar sua pergunta. Erro: {e}"
-            st.session_state.messages.append({"role": "assistant", "content": msg_erro})
+            # CORREÇÃO: Mostrar o erro real no chat para debugging.
+            erro_real = f"Erro DETALHADO do Hugging Face: {e}"
+            st.error(erro_real)
+            st.session_state.messages.append({"role": "assistant", "content": erro_real})
