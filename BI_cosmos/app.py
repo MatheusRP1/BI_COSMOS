@@ -1122,7 +1122,7 @@ elif pagina_selecionada == "🤖 IA Chatbot":
     
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        model = genai.GenerativeModel('gemini-pro')
     except Exception as e:
         st.error(f"Erro ao configurar a API do Gemini (verifique sua chave): {e}")
         st.stop()
