@@ -454,6 +454,38 @@ def processar_tabela_usos(df_raw):
     df_processado = df_processado.dropna(how='all')
     return df_processado
 
+def processar_tabela_infra(df_raw, start_keyword):
+    header_row_idx = -1
+    for i, row in df_raw.head(40).iterrows():
+        first_cell_val = clean_str(str(row.iloc[0]))
+        if first_cell_val.startswith(start_keyword.lower()):
+            header_row_idx = i + 1
+            break
+            
+    if header_row_idx == -1 or header_row_idx >= len(df_raw):
+        return pd.DataFrame()
+
+    df_processado = df_raw.loc[header_row_idx:].copy()
+    
+    new_cols = [clean_str(col) if pd.notna(col) else f"unnamed_{j}" for j, col in enumerate(df_processado.iloc[0])]
+    df_processado.columns = new_cols
+    df_processado = df_processado.iloc[1:].reset_index(drop=True)
+
+    all_nan_rows = df_processado.isnull().all(axis=1)
+    if all_nan_rows.any():
+        first_nan_row = all_nan_rows.idxmax()
+        df_processado = df_processado.loc[:first_nan_row-1]
+        
+    df_processado = df_processado.loc[:, ~df_processado.columns.str.startswith('unnamed')]
+    df_processado = df_processado.dropna(how='all')
+    
+    col_indicador = encontrar_coluna(df_processado, ['indicador'])
+    if col_indicador:
+        df_processado = df_processado.dropna(subset=[col_indicador])
+        df_processado = df_processado.set_index(col_indicador)
+
+    return df_processado
+
 try:
     SCRIPT_DIR = pathlib.Path(__file__).parent
 except NameError:
@@ -666,8 +698,10 @@ elif pagina_selecionada == "Dimensões":
         criar_pagina_dimensao("Ambiental", dados['ambiental'], mapas_carregados)
     elif dimensao_selecionada == "Social":
         criar_pagina_dimensao("Social", dados['social'], mapas_carregados)
+    
     elif dimensao_selecionada == "Física":
         criar_pagina_dimensao("Física", dados['fisica'], mapas_carregados)
+        
     elif dimensao_selecionada == "Sensorial":
         criar_pagina_dimensao("Sensorial", dados['sensorial'], mapas_carregados)
         
@@ -1230,16 +1264,24 @@ elif pagina_selecionada == "🤖 IA Chatbot":
         try:
             messages_for_api = []
             
-            system_prompt = f"""Você é um assistente de análise de dados. Responda à pergunta do usuário usando APENAS o contexto fornecido. Se a informação não estiver no contexto, diga "Essa informação não foi encontrada nos dados carregados".
+            system_prompt = f"""Você é um assistente especialista em arquitetura e análise de viabilidade de terreno. Seu trabalho é ajudar a responder perguntas sobre um projeto.
+            
+            REGRAS IMPORTANTES:
+            1. Responda usando APENAS o contexto de dados fornecido.
+            2. Se a informação não estiver no contexto, diga "Essa informação não foi encontrada nos dados carregados".
+            3. Seja direto e profissional, como em uma apresentação.
             
             Contexto:
             {st.session_state.contexto_dados}
             """
-            messages_for_api.append({"role": "system", "content": system_prompt})
             
-            for msg in st.session_state.messages[1:]:
-                messages_for_api.append({"role": msg["role"], "content": msg["content"]})
+            for msg in st.session_state.messages[1:-1]:
+                messages_for_api.append(msg)
             
+            messages_for_api.append({
+                "role": "user",
+                "content": f"{system_prompt}\n\nPERGUNTA:\n{prompt}"
+            })
             
             with st.spinner("Analisando..."):
                 response = client.chat_completion(
