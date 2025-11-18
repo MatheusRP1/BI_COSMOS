@@ -454,38 +454,6 @@ def processar_tabela_usos(df_raw):
     df_processado = df_processado.dropna(how='all')
     return df_processado
 
-def processar_tabela_infra(df_raw, start_keyword):
-    header_row_idx = -1
-    for i, row in df_raw.head(40).iterrows():
-        first_cell_val = clean_str(str(row.iloc[0]))
-        if first_cell_val.startswith(start_keyword.lower()):
-            header_row_idx = i + 1
-            break
-            
-    if header_row_idx == -1 or header_row_idx >= len(df_raw):
-        return pd.DataFrame()
-
-    df_processado = df_raw.loc[header_row_idx:].copy()
-    
-    new_cols = [clean_str(col) if pd.notna(col) else f"unnamed_{j}" for j, col in enumerate(df_processado.iloc[0])]
-    df_processado.columns = new_cols
-    df_processado = df_processado.iloc[1:].reset_index(drop=True)
-
-    all_nan_rows = df_processado.isnull().all(axis=1)
-    if all_nan_rows.any():
-        first_nan_row = all_nan_rows.idxmax()
-        df_processado = df_processado.loc[:first_nan_row-1]
-        
-    df_processado = df_processado.loc[:, ~df_processado.columns.str.startswith('unnamed')]
-    df_processado = df_processado.dropna(how='all')
-    
-    col_indicador = encontrar_coluna(df_processado, ['indicador'])
-    if col_indicador:
-        df_processado = df_processado.dropna(subset=[col_indicador])
-        df_processado = df_processado.set_index(col_indicador)
-
-    return df_processado
-
 try:
     SCRIPT_DIR = pathlib.Path(__file__).parent
 except NameError:
@@ -698,65 +666,8 @@ elif pagina_selecionada == "Dimensões":
         criar_pagina_dimensao("Ambiental", dados['ambiental'], mapas_carregados)
     elif dimensao_selecionada == "Social":
         criar_pagina_dimensao("Social", dados['social'], mapas_carregados)
-    
     elif dimensao_selecionada == "Física":
         criar_pagina_dimensao("Física", dados['fisica'], mapas_carregados)
-        
-        st.divider()
-        st.subheader("Análise Detalhada de Infraestrutura")
-        st.caption("Dados extraídos dinamicamente das sub-tabelas da aba 'KPIs (Física)'")
-
-        df_fis_raw = pd.DataFrame()
-        nome_real_fisica = None
-        
-        try:
-            uploaded_file.seek(0)
-            xls = pd.ExcelFile(uploaded_file)
-            for sheet_name in xls.sheet_names:
-                if "kpis (física)" in sheet_name.lower():
-                    nome_real_fisica = sheet_name
-                    break
-        except Exception as e:
-            st.error(f"Erro ao re-abrir o Excel para encontrar a aba 'Física': {e}")
-
-        if not nome_real_fisica:
-            st.error("Não foi possível encontrar o nome da aba 'KPIs (Física)' no arquivo.")
-        else:
-            try:
-                uploaded_file.seek(0)
-                df_fis_raw = pd.read_excel(
-                    uploaded_file, 
-                    sheet_name=nome_real_fisica, 
-                    header=None 
-                )
-            except Exception as e:
-                st.error(f"Erro ao re-ler a aba 'Física' com header=None: {e}")
-
-        if df_fis_raw.empty:
-            st.warning("Aba 'Física' está vazia ou não pôde ser lida como dados brutos.")
-        else:
-            df_agua = processar_tabela_infra(df_fis_raw, 'água')
-            df_energia = processar_tabela_infra(df_fis_raw, 'energia')
-            df_drenagem = processar_tabela_infra(df_fis_raw, 'drenagem')
-
-            if not df_agua.empty:
-                with st.expander("💧 Análise de Água e Esgotamento", expanded=True):
-                    st.dataframe(df_agua, use_container_width=True)
-            else:
-                st.warning("Sub-tabela 'ÁGUA' não encontrada.")
-                
-            if not df_energia.empty:
-                with st.expander("⚡ Análise de Energia", expanded=True):
-                    st.dataframe(df_energia, use_container_width=True)
-            else:
-                st.warning("Sub-tabela 'ENERGIA' não encontrada.")
-
-            if not df_drenagem.empty:
-                with st.expander("🌧️ Análise de Drenagem", expanded=True):
-                    st.dataframe(df_drenagem, use_container_width=True)
-            else:
-                st.warning("Sub-tabela 'DRENAGEM/ESGOTAMENTO PLUVIAL' não encontrada.")
-
     elif dimensao_selecionada == "Sensorial":
         criar_pagina_dimensao("Sensorial", dados['sensorial'], mapas_carregados)
         
